@@ -4,10 +4,9 @@ Trying to get those last-minute cancellation spots on ICBC? I know some people w
 
 ## New Method (+Auto Booking)
 This method simply uses `Document.querySelector()` to trigger the click event, and get the text result from DOM.
-1. Select your "favourite" test location (make sure it has a yellowish background colour)
-   ![](/pictures/step1a.png)
-2. Copy the [script](/script.js), edit the `CONFIG`. Now paste and run it on DevTools -> Console
+1. Visit the [ICBC road test book site](https://onlinebusiness.icbc.com/webdeas-ui/home).
    ![](/pictures/console.png)
+2. Copy the [script](/script.js), edit the `CONFIG`. Now paste and run it on DevTools -> Console
 3. Once alert is triggered, it means the rescheduling has been submited! Now GO CHECK YOUR EMAIL AND FINISH THE VERIFICATION!
    ![](/pictures/found.png)
 4. Good luck on your road test! And fuck ICBC examiners!
