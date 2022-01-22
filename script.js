@@ -103,6 +103,11 @@ let ICBCSite = {
         signInButton.click();
     },
 
+    signout: async () => {
+        const signOutButton = await $('button', 'Sign Out');
+        signOutButton.click();
+    },
+
     pickLocation: async ({CITY, LOCATION}) => {
         const rescheduleButton = await $('button', 'Reschedule appointment');
         rescheduleButton.click();
@@ -145,17 +150,17 @@ let ICBCSite = {
                 dom = await $(`${foundDateSelector}, .dialog.container .${noAppointmentMsgClass}, .dialog.container .${refreshingClass}, .dialog.container .${errorClass}`);    // wait for result to show
             } while (dom.classList.contains(refreshingClass))
         } catch (e) {
-            let alertMessage = `Cannot find dom. Check the UI. ${e}`;
-            utils.beep();
-            console.error(alertMessage)
-            setTimeout(() => {
-                alert(alertMessage);
-            });
+            console.log(`Abnormal DOM state. Assuming it is logged out. Re-login now...`);
+            await main();
             return;
         }
 
         if (dom.classList.contains(errorClass)) {
-            console.log(`ICBC system error. Trying again...`);
+            console.log(`ICBC system error. Signing out and re-login...`);
+            await ICBCSite.signout();
+            await main();
+            return;
+
         } else if (dom.classList.contains(noAppointmentMsgClass)) {
             console.log(`No appointment at the moment. Refreshing now...`);
         } else {
@@ -198,8 +203,12 @@ let ICBCSite = {
     }
 }
 
+const main = async () => {
+    await ICBCSite.login(CONFIG);
+    await ICBCSite.pickLocation(CONFIG);
+    await ICBCSite.checkDate();
+};
+
 var $ = utils.$;
 
-await ICBCSite.login(CONFIG);
-await ICBCSite.pickLocation(CONFIG);
-await ICBCSite.checkDate();
+await main();
