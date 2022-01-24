@@ -20,9 +20,9 @@ let utils = {
 
         if (elements.length >= 1) {
             return elements[0];
-        } else if (retry < 100) {
-            console.log(`retrying ${selector} ${text}`);
-            await new Promise(resolve => setTimeout(resolve, 100));
+        } else if (retry < 20) {
+            console.debug(`retrying ${selector} ${text}`);
+            await new Promise(resolve => setTimeout(resolve, 500));
             return await $(selector, text, retry + 1);
         } else {
             throw new Error(`Cannot find element ${selector} ${text}`);
@@ -79,33 +79,57 @@ let utils = {
 
 let ICBCSite = {
     login: async ({LAST_NAME: lastName, LICENSE_NUMBER: licenseNumber, KEYWORD: keyword}) => {
-        // State: url is https://onlinebusiness.icbc.com/webdeas-ui/home
-        const nextButton = await $('button', 'Next');
-        nextButton.click();
-        // State: url is https://onlinebusiness.icbc.com/webdeas-ui/login;type=driver
+        try {
+            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/home
+            const nextButton = await $('button', 'Next');
+            nextButton.click();
+            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/login;type=driver
 
-        const driverNameInput = await $('input[aria-label="driver-name"]');
-        driverNameInput.value = lastName;
-        utils.setValueForElementByEvent(driverNameInput);
+            const driverNameInput = await $('input[aria-label="driver-name"]');
+            driverNameInput.value = lastName;
+            utils.setValueForElementByEvent(driverNameInput);
 
-        const driverLicenseInput = await $('input[aria-label="driver-licence"]');
-        driverLicenseInput.value = licenseNumber;
-        utils.setValueForElementByEvent(driverLicenseInput);
+            const driverLicenseInput = await $('input[aria-label="driver-licence"]');
+            driverLicenseInput.value = licenseNumber;
+            utils.setValueForElementByEvent(driverLicenseInput);
 
-        const keywordInput = await $('input[aria-label="keyword"]');
-        keywordInput.value = keyword;
-        utils.setValueForElementByEvent(keywordInput);
+            const keywordInput = await $('input[aria-label="keyword"]');
+            keywordInput.value = keyword;
+            utils.setValueForElementByEvent(keywordInput);
 
-        const agreementCheckbox = await $('input[type="checkbox"]')
-        agreementCheckbox.click();
+            const agreementCheckbox = await $('input[type="checkbox"]')
+            agreementCheckbox.click();
 
-        const signInButton = await $('button', 'Sign in');
-        signInButton.click();
+            const errorMessage = '.error-message';
+            const buttonExistsInNextPage = '.raised-button';
+            let dom;
+            do {
+                dom = await $(`${errorMessage}, ${buttonExistsInNextPage}`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const signInButton = await $('button', 'Sign in');
+                signInButton.click();
+            } while (dom.classList.contains(errorMessage))
+        } catch (e) {
+            try {
+                // State: url is https://onlinebusiness.icbc.com/webdeas-ui/login;type=driver
+                console.log(`Cannot login. Retrying now... ${e}`);
+                const backButton = await $('button', 'Back');
+                backButton.click();
+            } catch (e) {
+                console.debug('Cannot find back button. Assuming it is on home page now')
+            }
+            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/home
+            await ICBCSite.login(CONFIG);
+        }
     },
 
     signout: async () => {
-        const signOutButton = await $('button', 'Sign Out');
-        signOutButton.click();
+        try {
+            const signOutButton = await $('button', 'Sign Out');
+            signOutButton.click();
+        } catch (e) {
+            console.debug('Cannot sign out. Maybe it is already in sign out state')
+        }
     },
 
     pickLocation: async ({CITY, LOCATION}) => {
@@ -117,8 +141,10 @@ let ICBCSite = {
         // State: url is https://onlinebusiness.icbc.com/webdeas-ui/booking
         const locationInput = await $('input[aria-label="Number"]');
         locationInput.value = CITY;
+        locationInput.focus();
         locationInput.click();
         locationInput.focus();
+        locationInput.click();
         utils.setValueForElementByEvent(locationInput);
 
         const locationSpan = await $('span', CITY);
@@ -144,44 +170,37 @@ let ICBCSite = {
         const refreshingClass = 'searching';
         const errorClass = 'error-msg';
         let dom;
-        try {
-            do {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                dom = await $(`${foundDateSelector}, .dialog.container .${noAppointmentMsgClass}, .dialog.container .${refreshingClass}, .dialog.container .${errorClass}`);    // wait for result to show
-            } while (dom.classList.contains(refreshingClass))
-        } catch (e) {
-            console.log(`Abnormal DOM state. Assuming it is logged out. Re-login now...`);
-            await main();
-            return;
-        }
+
+        do {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            dom = await $(`${foundDateSelector}, .dialog.container .${noAppointmentMsgClass}, .dialog.container .${refreshingClass}, .dialog.container .${errorClass}`);    // wait for result to show
+        } while (dom.classList.contains(refreshingClass))
 
         if (dom.classList.contains(errorClass)) {
-            console.log(`ICBC system error. Signing out and re-login...`);
-            await ICBCSite.signout();
-            await main();
+            console.debug(`ICBC system error. Signing out and re-login...`);
+            await restart()
             return;
-
         } else if (dom.classList.contains(noAppointmentMsgClass)) {
             console.log(`No appointment at the moment. Refreshing now...`);
         } else {
             const firstDateString = dom.innerText.replace(/(\d+)\w+,/, '$1,');
             const firstDate = await new Date(firstDateString);
+
+            const firstTimeButton = await $('.dialog.container .mat-button-toggle-button');
+            const timeString = firstTimeButton.innerText;
+            const [hours, min, period] = timeString.split(/[: ]/);
+            firstDate.setHours(parseInt(hours) + (period.toLowerCase() === 'pm' ? 12 : 0), parseInt(min), 0, 0)
+
             const result = firstDate < CONFIG.PREFER_TO_BE_BEFORE;
             console.log(`Earliest date: ${firstDate}. Refreshing now...`);
             if (result) {
-                await ICBCSite.proceedWithBooking();
-                const alertMessage = `BOOKED: ${firstDate}. NOW VERIFY THE EMAIL!!!!!`;
                 utils.beep();
-                console.log(alertMessage);
-                setTimeout(() => {
-                    alert(alertMessage);
-                });
+                await ICBCSite.proceedWithBooking();
+                console.log(`BOOKED: ${firstDate}. NOW VERIFY THE EMAIL!!!!!`);
                 return
             }
         }
-        setTimeout(() => {
-            ICBCSite.checkDate();
-        });
+        await ICBCSite.checkDate();
     },
 
     proceedWithBooking: async () => {
@@ -203,10 +222,21 @@ let ICBCSite = {
     }
 }
 
+const restart = async () => {
+    await ICBCSite.signout();
+    await main();
+}
+
 const main = async () => {
     await ICBCSite.login(CONFIG);
-    await ICBCSite.pickLocation(CONFIG);
-    await ICBCSite.checkDate();
+    try {
+        await ICBCSite.pickLocation(CONFIG);
+        await ICBCSite.checkDate();
+    } catch (e) {
+        console.debug(`Global: Abnormal DOM state. Assuming it is logged out. Re-login now... ${e}`);
+        await restart();
+    }
+
 };
 
 var $ = utils.$;
