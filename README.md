@@ -21,4 +21,4 @@ As soon as it catches a desired date, you will hear a tsunami alert, CONGRATS, y
 ![](/pictures/found.png)
 ![](/pictures/record.png)
 
-Good luck on your road test! Either be kick ass or kick the examiner's ass!
+Good luck on your road test! Either have your ass kicked or kick the examiner's ass!
