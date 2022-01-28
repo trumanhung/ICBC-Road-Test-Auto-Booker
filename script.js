@@ -7,8 +7,14 @@ let CONFIG = {
     LOCATION: 'Richmond driver licensing'
 }
 
-let utils = {
+let aborted = false;
+
+const abort = () => aborted = true;
+
+const utils = {
     $: async (selector, text, parentDom = null, _retry = 0, _all = false) => {
+        if (aborted) throw new Error("Aborted");
+
         let elements = parentDom ? parentDom.querySelectorAll(selector) : document.querySelectorAll(selector);
 
         const filterWithText = () => {
@@ -81,14 +87,15 @@ let utils = {
     },
 }
 
-let ICBCSite = {
-    login: async ({LAST_NAME: lastName, LICENSE_NUMBER: licenseNumber, KEYWORD: keyword}) => {
-        try {
-            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/home
+const ICBCSite = {
+    gotoLoginPage: async function () {
+        if (document.URL.includes('/webdeas-ui/home')) {
             const nextButton = await $('button', 'Next');
             nextButton.click();
-            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/login;type=driver
-
+        }
+    }
+    , login: async ({LAST_NAME: lastName, LICENSE_NUMBER: licenseNumber, KEYWORD: keyword}) => {
+        try {
             const driverNameInput = await $('input[aria-label="driver-name"]');
             driverNameInput.value = lastName;
             utils.setValueForElementByEvent(driverNameInput);
@@ -114,20 +121,24 @@ let ICBCSite = {
                 signInButton.click();
             } while (dom.classList.contains(errorMessage))
         } catch (e) {
-            try {
-                // State: url is https://onlinebusiness.icbc.com/webdeas-ui/login;type=driver
+            if (!aborted) {
                 console.log(`Cannot login. Retrying now... ${e}`);
-                const backButton = await $('button', 'Back');
-                backButton.click();
-            } catch (e) {
-                console.debug('Cannot find back button. Assuming it is on home page now')
+                if (document.URL.includes('/webdeas-ui/login;type=driver')) {
+                    const backButton = await $('button', 'Back');
+                    backButton.click();
+                }
+                await ICBCSite.gotoLoginPage();
+                await ICBCSite.login(CONFIG);
             }
-            // State: url is https://onlinebusiness.icbc.com/webdeas-ui/home
-            await ICBCSite.login(CONFIG);
         }
     },
 
     signout: async () => {
+        if (document.URL.includes('/webdeas-ui/home')) {
+            console.log('already signed out');
+            return;
+        }
+
         try {
             const signOutButton = await $('button', 'Sign Out');
             signOutButton.click();
@@ -136,13 +147,14 @@ let ICBCSite = {
         }
     },
 
-    pickLocation: async ({CITY, LOCATION}) => {
+    gotoBookingTab: async function () {
         const rescheduleButton = await $('button', 'Reschedule appointment');
         rescheduleButton.click();
         const yesButton = await $('mat-dialog-container button', 'Yes');
         yesButton.click();
+    },
 
-        // State: url is https://onlinebusiness.icbc.com/webdeas-ui/booking
+    pickLocation: async ({CITY, LOCATION}) => {
         const locationInput = await $('input[aria-label="Number"]');
         locationInput.value = CITY;
         locationInput.focus();
@@ -175,7 +187,6 @@ let ICBCSite = {
         const dateBlockDom = await $$('.appointment-listings').then(nodeList => Array.from(nodeList));
         if (document.querySelector('.appointment-listings > span')) {
             dateBlockDom.push(...await $$('.appointment-listings > span').then(nodeList => Array.from(nodeList)));
-
         }
 
         // assume it is already sorted
@@ -269,18 +280,22 @@ const restart = async () => {
 }
 
 const main = async () => {
-    await ICBCSite.login(CONFIG);
+    if (document.URL.includes('/webdeas-ui/home')) await ICBCSite.gotoLoginPage();
+    if (document.URL.includes('/webdeas-ui/login;type=driver')) await ICBCSite.login(CONFIG);
     try {
+        if (!document.URL.includes('/webdeas-ui/booking')) await ICBCSite.gotoBookingTab();
         await ICBCSite.pickLocation(CONFIG);
         await ICBCSite.checkDate();
     } catch (e) {
-        console.debug(`Global: Abnormal DOM state. Assuming it is logged out. Re-login now... ${e}`);
-        await restart();
+        if (!aborted) {
+            console.debug(`Global: Abnormal DOM state. Assuming it is logged out. Re-login now... ${e}`);
+            await restart();
+        }
     }
 
 };
 
-var $ = utils.$;
-var $$ = utils.$$;
+const $$ = utils.$$;
+const $ = utils.$;
 
 await main();
