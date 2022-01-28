@@ -8,8 +8,8 @@ let CONFIG = {
 }
 
 let utils = {
-    $: async (selector, text, retry = 0) => {
-        let elements = document.querySelectorAll(selector);
+    $: async (selector, text, parentDom = null, _retry = 0, _all = false) => {
+        let elements = parentDom ? parentDom.querySelectorAll(selector) : document.querySelectorAll(selector);
 
         const filterWithText = () => {
             elements = Array.prototype.filter.call(elements, function (element) {
@@ -19,14 +19,18 @@ let utils = {
         text && filterWithText();
 
         if (elements.length >= 1) {
-            return elements[0];
-        } else if (retry < 20) {
+            return _all ? elements : elements[0];
+        } else if (_retry < 20) {
             console.debug(`retrying ${selector} ${text}`);
             await new Promise(resolve => setTimeout(resolve, 500));
-            return await $(selector, text, retry + 1);
+            return await $(selector, text, parentDom, _retry + 1, _all);
         } else {
             throw new Error(`Cannot find element ${selector} ${text}`);
         }
+    },
+
+    $$: async (selector, text, parentDom = null, _retry = 0,) => {
+        return utils.$(selector, text, parentDom, _retry, true)
     },
 
     /**
@@ -156,7 +160,42 @@ let ICBCSite = {
         departmentTitle.click();
     },
 
-    checkDate: async () => {
+    buildAppointmentList: async () => {
+        const appointmentListings = [];
+
+        /* build appointment listings */
+
+        /**
+         * Parse into a date string that Date object takes
+         * @param {String} titleString. format example: 'Friday, July 8th, 2022', 'Wednesday, July 13th, 2022'
+         * @returns {String} 'Friday, July 8, 2022', 'Wednesday, July 13, 2022'
+         */
+        const parseDateTitle = titleString => titleString.replace(/(\d+)\w+,/, '$1,');
+
+        const dateBlockDom = await $$('.appointment-listings').then(nodeList => Array.from(nodeList));
+        if (document.querySelector('.appointment-listings > span')) {
+            dateBlockDom.push(...await $$('.appointment-listings > span').then(nodeList => Array.from(nodeList)));
+
+        }
+
+        // assume it is already sorted
+        for (const dateSpan of dateBlockDom) {
+            const dateTitleDom = await $('.date-title', null, dateSpan);
+            const dateString = parseDateTitle(dateTitleDom.innerText);
+
+            const timeButtons = await $$(':scope > mat-button-toggle', null, dateSpan);
+            timeButtons.forEach(timeButton => {
+                const newDate = new Date(dateString);
+                const [hours, min, period] = timeButton.innerText.split(/[: ]/);
+                newDate.setHours(parseInt(hours) + (period.toLowerCase() === 'pm' ? 12 : 0), parseInt(min), 0, 0);
+                appointmentListings.push(newDate);
+            });
+        }
+
+        return appointmentListings;
+    },
+
+    checkDate: async (previousAppointmentList = null) => {
         const selectedLocationDom = await $('.background-highlight.clicked')
         if (!selectedLocationDom) {
             console.warn("Are you sure you already selected a location? There should be a yellowish background once you click on it");
@@ -165,7 +204,7 @@ let ICBCSite = {
             await selectedLocationDom.click();    // clicking on the location
         }
 
-        const foundDateSelector = '.dialog.container .date-title';
+        const appointmentListingSelector = '.appointment-listings';
         const noAppointmentMsgClass = 'no-appts-msg';
         const refreshingClass = 'searching';
         const errorClass = 'error-msg';
@@ -173,34 +212,36 @@ let ICBCSite = {
 
         do {
             await new Promise(resolve => setTimeout(resolve, 500));
-            dom = await $(`${foundDateSelector}, .dialog.container .${noAppointmentMsgClass}, .dialog.container .${refreshingClass}, .dialog.container .${errorClass}`);    // wait for result to show
+            dom = await $(`${appointmentListingSelector}, .${noAppointmentMsgClass}, .${refreshingClass}, .${errorClass}`);    // wait for result to show
         } while (dom.classList.contains(refreshingClass))
 
         if (dom.classList.contains(errorClass)) {
             console.debug(`ICBC system error. Signing out and re-login...`);
             await restart()
             return;
-        } else if (dom.classList.contains(noAppointmentMsgClass)) {
+        }
+
+        if (dom.classList.contains(noAppointmentMsgClass)) {
             console.log(`No appointment at the moment. Refreshing now...`);
-        } else {
-            const firstDateString = dom.innerText.replace(/(\d+)\w+,/, '$1,');
-            const firstDate = await new Date(firstDateString);
+            await ICBCSite.checkDate(null);
+            return;
+        }
 
-            const firstTimeButton = await $('.dialog.container .mat-button-toggle-button');
-            const timeString = firstTimeButton.innerText;
-            const [hours, min, period] = timeString.split(/[: ]/);
-            firstDate.setHours(parseInt(hours) + (period.toLowerCase() === 'pm' ? 12 : 0), parseInt(min), 0, 0)
+        const appointmentListings = await ICBCSite.buildAppointmentList();
+        const haveUpdate = appointmentListings?.length !== previousAppointmentList?.length || appointmentListings.some((date, i) => Date.parse(date) !== Date.parse(previousAppointmentList[i]));
 
-            const result = firstDate < CONFIG.PREFER_TO_BE_BEFORE;
-            console.log(`Earliest date: ${firstDate}. Refreshing now...`);
+        if (haveUpdate) {
+            console.table(appointmentListings);
+            const result = appointmentListings[0] < CONFIG.PREFER_TO_BE_BEFORE;
             if (result) {
                 utils.beep();
+                console.log(`Booking now: ${appointmentListings[0]}. NOW VERIFY THE EMAIL!!!!!`);
                 await ICBCSite.proceedWithBooking();
-                console.log(`BOOKED: ${firstDate}. NOW VERIFY THE EMAIL!!!!!`);
                 return
             }
         }
-        await ICBCSite.checkDate();
+
+        await ICBCSite.checkDate(appointmentListings); // recursion
     },
 
     proceedWithBooking: async () => {
@@ -240,5 +281,6 @@ const main = async () => {
 };
 
 var $ = utils.$;
+var $$ = utils.$$;
 
 await main();
