@@ -93,8 +93,9 @@ const ICBCSite = {
             const nextButton = await $('button', 'Next');
             nextButton.click();
         }
-    }
-    , login: async ({LAST_NAME: lastName, LICENSE_NUMBER: licenseNumber, KEYWORD: keyword}) => {
+    },
+
+    login: async ({LAST_NAME: lastName, LICENSE_NUMBER: licenseNumber, KEYWORD: keyword}) => {
         try {
             const driverNameInput = await $('input[aria-label="driver-name"]');
             driverNameInput.value = lastName;
@@ -128,16 +129,12 @@ const ICBCSite = {
                     backButton.click();
                 }
                 await ICBCSite.gotoLoginPage();
-                await ICBCSite.login(CONFIG);
             }
         }
     },
 
     signout: async () => {
-        if (document.URL.includes('/webdeas-ui/home')) {
-            console.log('already signed out');
-            return;
-        }
+        if (document.URL.includes('/webdeas-ui/home')) return;
 
         try {
             const signOutButton = await $('button', 'Sign Out');
@@ -219,11 +216,12 @@ const ICBCSite = {
         const noAppointmentMsgClass = 'no-appts-msg';
         const refreshingClass = 'searching';
         const errorClass = 'error-msg';
+        const homePageSelector = 'app-home';
         let dom;
 
         do {
             await new Promise(resolve => setTimeout(resolve, 500));
-            dom = await $(`${appointmentListingSelector}, .${noAppointmentMsgClass}, .${refreshingClass}, .${errorClass}`);    // wait for result to show
+            dom = await $(`${appointmentListingSelector}, .${noAppointmentMsgClass}, .${refreshingClass}, .${errorClass}, ${homePageSelector}`);    // wait for result to show
         } while (dom.classList.contains(refreshingClass))
 
         if (dom.classList.contains(errorClass)) {
@@ -238,6 +236,12 @@ const ICBCSite = {
             return;
         }
 
+        if (dom.tagName.toLowerCase() === homePageSelector) {
+            console.debug(`Login expired. Re-logging in...`);
+            await main();
+            return;
+        }
+
         const appointmentListings = await ICBCSite.buildAppointmentList();
         const haveUpdate = appointmentListings?.length !== previousAppointmentList?.length || appointmentListings.some((date, i) => Date.parse(date) !== Date.parse(previousAppointmentList[i]));
 
@@ -246,7 +250,7 @@ const ICBCSite = {
             const result = appointmentListings[0] < CONFIG.PREFER_TO_BE_BEFORE;
             if (result) {
                 utils.beep();
-                console.log(`Booking now: ${appointmentListings[0]}. NOW VERIFY THE EMAIL!!!!!`);
+                console.warn(`Booking now: ${appointmentListings[0]}. NOW VERIFY THE EMAIL!!!!!`);
                 await ICBCSite.proceedWithBooking();
                 return
             }
@@ -256,25 +260,30 @@ const ICBCSite = {
     },
 
     proceedWithBooking: async () => {
-        const firstTimeButton = await $('.dialog.container .mat-button-toggle-button');
-        await firstTimeButton.click();
+        try {
+            const firstTimeButton = await $('.dialog.container .mat-button-toggle-button');
+            await firstTimeButton.click();
 
-        const reviewAppointmentButton = await $('.dialog.container .mat-raised-button');
-        await reviewAppointmentButton.click();
+            const reviewAppointmentButton = await $('.dialog.container .mat-raised-button');
+            await reviewAppointmentButton.click();
 
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const nextButton = await $('.details .mat-raised-button');
-        await nextButton.click();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const nextButton = await $('.details .mat-raised-button');
+            await nextButton.click();
 
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const submitButton = await $('.mat-raised-button[type="submit"]');
-        await submitButton.click();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const submitButton = await $('.mat-raised-button[type="submit"]');
+            await submitButton.click();
 
-        // Now landing on Verification page
+            // Now landing on Verification page
+        } catch (e) {
+            console.warn(`You might need to manually continue the booking ${e}`);
+        }
     }
 }
 
 const restart = async () => {
+    console.debug('Restarting...')
     await ICBCSite.signout();
     await main();
 }
@@ -287,10 +296,7 @@ const main = async () => {
         await ICBCSite.pickLocation(CONFIG);
         await ICBCSite.checkDate();
     } catch (e) {
-        if (!aborted) {
-            console.debug(`Global: Abnormal DOM state. Assuming it is logged out. Re-login now... ${e}`);
-            await restart();
-        }
+        if (!aborted) await restart();
     }
 
 };
