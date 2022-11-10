@@ -7,6 +7,7 @@ This method is kind of like selenium - it manipulates the DOM but all you need i
 
 ## how to run
 
+0. *Prerequisite*: you need first book a valid appointment from any location *manually*. This is just a quick way for the script to know your account is eligible for booking 
 1. Visit the [ICBC road test book site](https://onlinebusiness.icbc.com/webdeas-ui/home).
 2. Open DevTools (Ctrl+Shift+J) on your favourite Chromium browser.
 3. Run command (Ctrl+Shift+P), look for `Create new snippet`
