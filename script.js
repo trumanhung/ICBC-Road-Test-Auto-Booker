@@ -1,11 +1,11 @@
 let CONFIG = {
     PREFER_TO_BE_AFTER: new Date("2020-01-01"),
-    PREFER_TO_BE_BEFORE: new Date("2023-01-01"),
+    PREFER_TO_BE_BEFORE: new Date("2024-01-01"),
     LAST_NAME: 'X',
     LICENSE_NUMBER: 'X',
     KEYWORD: 'X',
-    CITY: 'Richmond, BC',
-    LOCATION: 'Richmond driver licensing'
+    CITY: 'Richmond, BC', /* has to match the city name in the dropdown. Case sensitive. */
+    LOCATION: 'Richmond driver licensing' /* has to match the location name in the list. Case sensitive. */
 }
 
 let aborted = false;
